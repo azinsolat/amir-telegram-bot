@@ -2,6 +2,11 @@ from telegram import Update
 from telegram.ext import Application,CommandHandler,MessageHandler,filters,ContextTypes
 import random
 import os
+import re
+import tempfile
+import shutil
+from yt_dlp import YoutubeDL
+
 
 TOKEN = os.environ["TELEGRAM_TOKEN"]
 BOT_USERNAME = os.environ.get("BOT_USERNAME", "@amirbeautybot")
@@ -111,35 +116,110 @@ def handle_response(text: str, last_reply=None):
 
 
 
+# --- دانلودر لینک‌ها با yt-dlp ---
+
+def download_media(url: str) -> str:
+    """
+    لینک رو می‌گیره، ویدیو/عکس رو دانلود می‌کنه
+    و آدرس فایل نهایی رو برمی‌گردونه.
+    """
+    temp_dir = tempfile.mkdtemp(prefix="amirbot_")
+
+    ydl_opts = {
+        "outtmpl": f"{temp_dir}/%(id)s.%(ext)s",
+        "format": "mp4/bestaudio/best",
+        "noplaylist": True,
+        "quiet": True,
+    }
+
+    with YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=True)
+        file_path = ydl.prepare_filename(info)
+
+    # برمی‌گردونیم، پاک‌کردن فولدر رو بعد از ارسال انجام می‌دیم
+    return file_path
 
 
-async def handle_massage(update:Update , context:ContextTypes.DEFAULT_TYPE):
-        if not update.message or not update.message.text:
-             return
-        message = update.message
-        text = message.text
-        chat_type = message.chat.type
 
 
-        print(f"user : {message.chat.id} , chat type:{chat_type},text :{text}")
 
-        if chat_type in ("group" , "supergroup"):
-             if(BOT_USERNAME in text.lower()):
-                  t=text.replace(BOT_USERNAME , '').strip()
-                  respose = handle_response(t)
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.text:
+        return
 
-             else:
-               return
+    message = update.message
+    text = message.text
+    chat_type = message.chat.type
 
+    print(f"user: {message.chat.id}, chat type: {chat_type}, text: {text}")
+
+    # --- 👇 اول چک کنیم آیا داخل متن لینک سایت‌های مدنظر هست یا نه ---
+    url_match = re.search(r'(https?://\S+)', text)
+    if url_match:
+        url = url_match.group(1)
+
+        if any(domain in url for domain in (
+            "youtube.com",
+            "youtu.be",
+            "instagram.com",
+            "tiktok.com",
+            "x.com",
+            "twitter.com",
+        )):
+            await message.reply_text("دندون رو جیگر بزارر دارم دانلودش میکنمم")
+
+            try:
+                loop = context.application.loop
+                file_path = await loop.run_in_executor(
+                    None, download_media, url
+                )
+
+                # ارسال فایل به صورت document (برای ویدیو یا عکس)
+                try:
+                    with open(file_path, "rb") as f:
+                        await message.reply_document(
+                            f,
+                            caption="اینم فایلت ✅"
+                        )
+                finally:
+                    # پاک‌کردن فایل و فولدر موقت
+                    folder = os.path.dirname(file_path)
+                    shutil.rmtree(folder, ignore_errors=True)
+
+            except Exception as e:
+                print("download error:", e)
+                await message.reply_text(
+                    "نتونستم دانلود کنم 😕\n"
+                    "ممکنه لینک مشکل داشته باشه، یا سایت اجازه دانلود نده."
+                )
+
+            return  # دیگه لازم نیست بریم سراغ چت معمولی
+
+    # --- 👇 اگر لینک نبود، همون رفتار قبلی چت‌بات ---
+
+    # گروه / سوپرگروه
+    if chat_type in ("group", "supergroup"):
+        text_lower = text.lower()
+        if BOT_USERNAME in text_lower:
+            t = text_lower.replace(BOT_USERNAME, "").strip()
+            response = handle_response(t)
         else:
-             last = context.user_data.get("last_reply")
-             respose = handle_response(text, last)
+            return
+    else:
+        # پی‌وی
+        last = context.user_data.get("last_reply")
+        response = handle_response(text, last)
+
+    context.user_data["last_reply"] = response
+    await message.reply_text(response)
 
 
-        context.user_data["last_reply"] = respose
 
 
-        await message.reply_text(respose)
+
+
+
+
 
 
 
@@ -163,12 +243,5 @@ if __name__ == "__main__":
 
      print("polling")
      app.run_polling()
-
-
-
-
-  
-
-
 
 
