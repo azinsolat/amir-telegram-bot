@@ -114,7 +114,7 @@ def handle_response(text: str, last_reply=None):
     if "چیکارا میکنی" in user_text or "چیکار میکنی" in user_text:
         return "داشتم مانگا میخوندم که مزاحمم شدی😔"
 
-    return random.choice(["داداش نمیفهمم چی میگی بدو برو به کارات برس وقت مام نگیر ","کس نگو برو پی کارت","متوحه نمیشم برو بعدا بیا که حال داشته باشم"]) 
+    return random.choice(["داداش نمیفهمم چی میگی بدو برو به کارات برس وقت مام نگیر ","کس نگو برو پی کارت","متوجه نمیشم برو بعدا بیا که حال داشته باشم"]) 
 
 
 
@@ -180,7 +180,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     with open(file_path, "rb") as f:
                         await message.reply_document(
                             f,
-                            caption="اینم فایل دانلود شده ✅"
+                            caption="بفرما اینم فیلمت✅"
                         )
                 finally:
                     folder = os.path.dirname(file_path)
@@ -244,6 +244,7 @@ if __name__ == "__main__":
 
      print("polling")
      app.run_polling()
+
 
 
 
