@@ -118,11 +118,16 @@ def handle_response(text: str, last_reply=None):
 
 
 
-def download_media(url: str) -> str:
+def download_media(url: str) -> tuple[str, str | None]:
+    """
+    ویدیو/عکس را دانلود می‌کند و:
+    - مسیر فایل
+    - کپشن/توضیحات پست (در صورت وجود) را برمی‌گرداند
+    """
     temp_dir = tempfile.mkdtemp(prefix="amirbot_")
 
     ydl_opts = {
-        "outtmpl": f"{temp_dir}/%(title)s.%(ext)s",   # 👈 اسم واقعی فایل
+        "outtmpl": f"{temp_dir}/%(title)s.%(ext)s",
         "format": "mp4/bestaudio/best",
         "noplaylist": True,
         "quiet": True,
@@ -132,7 +137,11 @@ def download_media(url: str) -> str:
         info = ydl.extract_info(url, download=True)
         file_path = ydl.prepare_filename(info)
 
-    return file_path
+    # کپشن پست (برای اینستا، تیک‌تاک، یوتیوب و … معمولا این فیلد هست)
+    caption = info.get("description") or ""
+
+    return file_path, caption
+
 
 
   
@@ -168,23 +177,53 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )):
             await message.reply_text("صبر کن دارم لینک رو دانلود می‌کنم... ⏳")
 
-            try:
-               
+                        try:
                 loop = asyncio.get_running_loop()
-                file_path = await loop.run_in_executor(
+                # 👇 حالا دو تا مقدار می‌گیریم: مسیر فایل + کپشنِ پست
+                file_path, remote_caption = await loop.run_in_executor(
                     None, download_media, url
                 )
 
-                
+                # ساختن کپشن نهایی
+                caption_parts = []
+
+                # ۱) کپشن خود پست (اینستا/تیک‌تاک/یوتیوب)
+                if remote_caption:
+                    caption_parts.append(remote_caption.strip())
+
+                # ۲) در صورت نیاز (اختیاری) می‌تونی متن خود کاربر رو هم اضافه کنی
+                # فعلاً نمی‌خواهی، پس این بخش رو می‌ذاریم کامنت بمونه
+                # original_text = message.text or ""
+                # user_caption = original_text.replace(url, "").strip()
+                # if user_caption:
+                #     caption_parts.append(user_caption)
+
+                # اگر هیچ کپشنی نبود، یه متن پیش‌فرض بذار
+                if not caption_parts:
+                    caption_parts.append("اینم فایل دانلود شده ✅")
+
+                # ۳) در انتها آیدی ربات
+                caption_parts.append(BOT_USERNAME)
+
+                # چسبوندن همه بخش‌ها با دو خط فاصله بینشون
+                caption = "\n\n".join(caption_parts)
+
+                # اگر خیلی طولانی شد، یه مقدار کوتاهش کن که از لیمیت تلگرام نزنه بیرون
+                if len(caption) > 1000:
+                    caption = caption[:1000] + "…"
+
+                # ارسال فایل به صورت document
                 try:
                     with open(file_path, "rb") as f:
                         await message.reply_document(
                             f,
-                            caption="بفرما اینم فیلمت✅"
+                            caption=caption
                         )
                 finally:
                     folder = os.path.dirname(file_path)
                     shutil.rmtree(folder, ignore_errors=True)
+
+          
 
             except Exception as e:
                 print("download error:", e)
@@ -244,6 +283,7 @@ if __name__ == "__main__":
 
      print("polling")
      app.run_polling()
+
 
 
 
