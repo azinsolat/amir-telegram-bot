@@ -6,6 +6,8 @@ import re
 import tempfile
 import shutil
 from yt_dlp import YoutubeDL
+import asyncio
+
 
 
 TOKEN = os.environ["TELEGRAM_TOKEN"]
@@ -155,6 +157,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # --- 👇 اول چک کنیم آیا داخل متن لینک سایت‌های مدنظر هست یا نه ---
     url_match = re.search(r'(https?://\S+)', text)
+
     if url_match:
         url = url_match.group(1)
 
@@ -166,23 +169,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "x.com",
             "twitter.com",
         )):
-            await message.reply_text("دندون رو جیگر بزارر دارم دانلودش میکنمم")
+            await message.reply_text("صبر کن دارم لینک رو دانلود می‌کنم... ⏳")
 
             try:
-                loop = context.application.loop
+                # 👇 این دو خط رو به‌جای context.application.loop بگذار
+                loop = asyncio.get_running_loop()
                 file_path = await loop.run_in_executor(
                     None, download_media, url
                 )
 
-                # ارسال فایل به صورت document (برای ویدیو یا عکس)
+                # ارسال فایل
                 try:
                     with open(file_path, "rb") as f:
                         await message.reply_document(
                             f,
-                            caption="اینم فایلت ✅"
+                            caption="اینم فایل دانلود شده ✅"
                         )
                 finally:
-                    # پاک‌کردن فایل و فولدر موقت
                     folder = os.path.dirname(file_path)
                     shutil.rmtree(folder, ignore_errors=True)
 
@@ -193,7 +196,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "ممکنه لینک مشکل داشته باشه، یا سایت اجازه دانلود نده."
                 )
 
-            return  # دیگه لازم نیست بریم سراغ چت معمولی
+            return
+
+   
+        
+        
+         # دیگه لازم نیست بریم سراغ چت معمولی
 
     # --- 👇 اگر لینک نبود، همون رفتار قبلی چت‌بات ---
 
@@ -243,6 +251,5 @@ if __name__ == "__main__":
 
      print("polling")
      app.run_polling()
-
 
 
