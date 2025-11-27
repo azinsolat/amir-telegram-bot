@@ -7,6 +7,9 @@ import tempfile
 import shutil
 from yt_dlp import YoutubeDL
 import asyncio
+import urllib.parse
+import urllib.request
+
 
 
 
@@ -117,6 +120,107 @@ def handle_response(text: str, last_reply=None):
     return random.choice(["داداش نمیفهمم چی میگی بدو برو به کارات برس وقت مام نگیر ","کس نگو برو پی کارت","متوحه نمیشم برو بعدا بیا که حال داشته باشم"]) 
 
 
+
+
+
+
+
+def is_instagram_profile_url(url: str) -> bool:
+    """
+    بررسی می‌کند که آیا لینک، لینک پروفایل اینستاگرام است (نه پست/ریل/استوری).
+    مثال: https://www.instagram.com/username/
+    """
+    parsed = urllib.parse.urlparse(url)
+    host = parsed.netloc.lower()
+
+    if "instagram.com" not in host:
+        return False
+
+    path = parsed.path.strip("/")
+
+    if not path:
+        return False
+
+    # اولین بخش مسیر
+    first = path.split("/")[0]
+
+    # اگر /p/ یا /reel/ یا /stories/ بود یعنی پست/استوری است، نه پروفایل
+    if first in ("p", "reel", "tv", "stories"):
+        return False
+
+    return True
+
+
+
+
+
+
+
+def fetch_instagram_profile(url: str) -> tuple[str, dict]:
+    """
+    اطلاعات پروفایل اینستاگرام را می‌گیرد و عکس پروفایل را دانلود می‌کند.
+
+    خروجی:
+    - مسیر فایل عکس پروفایل
+    - دیکشنری اطلاعات پروفایل (پرایوت بودن، تعداد پست، فالوور، فالوینگ، بیو، وبسایت)
+    """
+    temp_dir = tempfile.mkdtemp(prefix="amirbot_igprofile_")
+
+    ydl_opts = {
+        "skip_download": True,   # هیچ پستی را دانلود نکن، فقط اطلاعات را بگیر
+        "quiet": True,
+    }
+
+    with YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+
+    # --- عکس پروفایل ---
+
+    thumb_url = None
+    if "thumbnail" in info:
+        thumb_url = info["thumbnail"]
+    elif "thumbnails" in info and info["thumbnails"]:
+        thumb_url = info["thumbnails"][-1].get("url")
+
+    if not thumb_url:
+        raise ValueError("نتوانستم عکس پروفایل را پیدا کنم.")
+
+    parsed_thumb = urllib.parse.urlparse(thumb_url)
+    ext = os.path.splitext(parsed_thumb.path)[1] or ".jpg"
+    file_path = os.path.join(temp_dir, f"profile{ext}")
+
+    with urllib.request.urlopen(thumb_url) as resp, open(file_path, "wb") as out:
+        out.write(resp.read())
+
+    # --- اطلاعات پروفایل ---
+
+    meta: dict = {}
+
+    # خیلی از این فیلدها ممکن است وجود نداشته باشند؛ برای همین .get استفاده می‌کنیم
+    meta["is_private"] = info.get("is_private")
+    meta["posts"] = info.get("n_entries") or info.get("playlist_count")
+    meta["followers"] = (
+        info.get("channel_follower_count")
+        or info.get("followers")
+        or info.get("like_count")
+    )
+    meta["following"] = info.get("following_count")
+    meta["biography"] = info.get("description")
+    meta["website"] = info.get("channel_url") or info.get("uploader_url")
+
+    return file_path, meta
+
+
+
+
+
+
+
+
+
+
+
+
 def download_media(url: str) -> tuple[str, str | None]:
     """
     ویدیو/عکس را دانلود می‌کند و:
@@ -159,7 +263,71 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if url_match:
         url = url_match.group(1)
 
-        # فقط اگر لینک از این سایت‌ها بود، بریم سراغ دانلود
+        # --- ۱) اگر لینکِ پروفایل اینستاگرام بود ---
+        if is_instagram_profile_url(url):
+            await message.reply_text("صبر کن دارم اطلاعات پیج رو می‌گیرم... ⏳")
+
+            try:
+                loop = asyncio.get_running_loop()
+                file_path, meta = await loop.run_in_executor(
+                    None, fetch_instagram_profile, url
+                )
+
+                # ساختن متن کپشن
+                is_private = meta.get("is_private")
+                if is_private is True:
+                    priv_text = "🔐 پیج خصوصی"
+                elif is_private is False:
+                    priv_text = "🔓 پیج عمومی"
+                else:
+                    priv_text = "ℹ️ وضعیت حریم خصوصی نامشخص"
+
+                def fmt_num(n):
+                    if n is None:
+                        return "نامشخص"
+                    try:
+                        return f"{int(n):,}"
+                    except Exception:
+                        return str(n)
+
+                posts = fmt_num(meta.get("posts"))
+                followers = fmt_num(meta.get("followers"))
+                following = fmt_num(meta.get("following"))
+
+                bio = meta.get("biography") or "ندارد"
+                website = meta.get("website") or "ندارد"
+
+                caption = (
+                    f"{priv_text}\n\n"
+                    f"🌄 پست ها : {posts}\n"
+                    f"👥 فالوور ها : {followers}\n"
+                    f"👤 فالوینگ ها : {following}\n"
+                    f"📝 بیوگرافی:\n{bio}\n"
+                    f"🔗 وبسایت: {website}\n\n"
+                    f"{BOT_USERNAME}"
+                )
+
+                try:
+                    with open(file_path, "rb") as f:
+                        # 👇 به صورت photo، نه document
+                        await message.reply_photo(
+                            f,
+                            caption=caption
+                        )
+                finally:
+                    folder = os.path.dirname(file_path)
+                    shutil.rmtree(folder, ignore_errors=True)
+
+            except Exception as e:
+                print("ig profile error:", e)
+                await message.reply_text(
+                    "نتونستم اطلاعات این پیج رو بگیرم 😕\n"
+                    "ممکنه پیج محدودیت داشته باشه یا اینستاگرام اجازه نده."
+                )
+
+            return  # دیگه ادامه نده، چون همین پیام هندل شد
+
+        # --- ۲) اگر لینک پست ویدیو از IG/YT/TikTok و ... بود (همون قبلی) ---
         if any(domain in url for domain in (
             "youtube.com",
             "youtu.be",
@@ -172,10 +340,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             try:
                 loop = asyncio.get_running_loop()
-                # حالا دو تا مقدار می‌گیریم: مسیر فایل + کپشنِ پست
                 file_path, remote_caption = await loop.run_in_executor(
                     None, download_media, url
                 )
+
+            
+
 
                 # --- ساختن کپشن نهایی ---
                 caption_parts: list[str] = []
