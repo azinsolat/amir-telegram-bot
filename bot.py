@@ -53,12 +53,12 @@ def handle_response(text: str, last_reply=None):
 
     user_text = text.lower()
 
-    # 👇 اول منطق «لب و رد کن بیاد» رو چک کن
+   
     if last_reply and "لب و رد کن بیاد" in last_reply:
         if "باشه" in user_text:
             return "👌🏻👈🏻"
 
-    # بقیه‌ی جواب‌ها
+    
     if "hi" in user_text or "سلام" in user_text or "سلام خوشگله" in user_text:
         return random.choice([
             "سلام عزیزم",
@@ -118,7 +118,7 @@ def handle_response(text: str, last_reply=None):
 
 
 
-# --- دانلودر لینک‌ها با yt-dlp ---
+
 
 def download_media(url: str) -> str:
     """
@@ -138,7 +138,7 @@ def download_media(url: str) -> str:
         info = ydl.extract_info(url, download=True)
         file_path = ydl.prepare_filename(info)
 
-    # برمی‌گردونیم، پاک‌کردن فولدر رو بعد از ارسال انجام می‌دیم
+  
     return file_path
 
 
@@ -155,7 +155,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     print(f"user: {message.chat.id}, chat type: {chat_type}, text: {text}")
 
-    # --- 👇 اول چک کنیم آیا داخل متن لینک سایت‌های مدنظر هست یا نه ---
+ 
     url_match = re.search(r'(https?://\S+)', text)
 
     if url_match:
@@ -172,13 +172,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await message.reply_text("صبر کن دارم لینک رو دانلود می‌کنم... ⏳")
 
             try:
-                # 👇 این دو خط رو به‌جای context.application.loop بگذار
+               
                 loop = asyncio.get_running_loop()
                 file_path = await loop.run_in_executor(
                     None, download_media, url
                 )
 
-                # ارسال فایل
+                
                 try:
                     with open(file_path, "rb") as f:
                         await message.reply_document(
@@ -201,10 +201,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
    
         
         
-         # دیگه لازم نیست بریم سراغ چت معمولی
-
-    # --- 👇 اگر لینک نبود، همون رفتار قبلی چت‌بات ---
-
     # گروه / سوپرگروه
     if chat_type in ("group", "supergroup"):
         text_lower = text.lower()
@@ -251,5 +247,6 @@ if __name__ == "__main__":
 
      print("polling")
      app.run_polling()
+
 
 
