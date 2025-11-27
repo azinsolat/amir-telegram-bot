@@ -118,17 +118,11 @@ def handle_response(text: str, last_reply=None):
 
 
 
-
-
 def download_media(url: str) -> str:
-    """
-    لینک رو می‌گیره، ویدیو/عکس رو دانلود می‌کنه
-    و آدرس فایل نهایی رو برمی‌گردونه.
-    """
     temp_dir = tempfile.mkdtemp(prefix="amirbot_")
 
     ydl_opts = {
-        "outtmpl": f"{temp_dir}/%(id)s.%(ext)s",
+        "outtmpl": f"{temp_dir}/%(title)s.%(ext)s",   # 👈 اسم واقعی فایل
         "format": "mp4/bestaudio/best",
         "noplaylist": True,
         "quiet": True,
@@ -138,8 +132,11 @@ def download_media(url: str) -> str:
         info = ydl.extract_info(url, download=True)
         file_path = ydl.prepare_filename(info)
 
-  
     return file_path
+
+
+  
+  
 
 
 
@@ -247,6 +244,7 @@ if __name__ == "__main__":
 
      print("polling")
      app.run_polling()
+
 
 
 
