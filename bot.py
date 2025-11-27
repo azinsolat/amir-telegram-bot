@@ -53,12 +53,12 @@ def handle_response(text: str, last_reply=None):
 
     user_text = text.lower()
 
-   
+    # 👇 اول منطق «لب و رد کن بیاد» رو چک کن
     if last_reply and "لب و رد کن بیاد" in last_reply:
         if "باشه" in user_text:
             return "👌🏻👈🏻"
 
-    
+    # بقیه‌ی جواب‌ها
     if "hi" in user_text or "سلام" in user_text or "سلام خوشگله" in user_text:
         return random.choice([
             "سلام عزیزم",
@@ -114,8 +114,7 @@ def handle_response(text: str, last_reply=None):
     if "چیکارا میکنی" in user_text or "چیکار میکنی" in user_text:
         return "داشتم مانگا میخوندم که مزاحمم شدی😔"
 
-    return random.choice(["داداش نمیفهمم چی میگی بدو برو به کارات برس وقت مام نگیر ","کس نگو برو پی کارت","متوجه نمیشم برو بعدا بیا که حال داشته باشم"]) 
-
+    return random.choice(["داداش نمیفهمم چی میگی بدو برو به کارات برس وقت مام نگیر ","کس نگو برو پی کارت","متوحه نمیشم برو بعدا بیا که حال داشته باشم"]) 
 
 
 def download_media(url: str) -> tuple[str, str | None]:
@@ -144,12 +143,6 @@ def download_media(url: str) -> tuple[str, str | None]:
 
 
 
-  
-  
-
-
-
-
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
@@ -161,12 +154,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     print(f"user: {message.chat.id}, chat type: {chat_type}, text: {text}")
 
- 
+    # --- چک کردن اینکه پیام لینک دارد یا نه ---
     url_match = re.search(r'(https?://\S+)', text)
-
     if url_match:
         url = url_match.group(1)
 
+        # فقط اگر لینک از این سایت‌ها بود، بریم سراغ دانلود
         if any(domain in url for domain in (
             "youtube.com",
             "youtu.be",
@@ -177,42 +170,35 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )):
             await message.reply_text("صبر کن دارم لینک رو دانلود می‌کنم... ⏳")
 
-                        try:
+            try:
                 loop = asyncio.get_running_loop()
-                # 👇 حالا دو تا مقدار می‌گیریم: مسیر فایل + کپشنِ پست
+                # حالا دو تا مقدار می‌گیریم: مسیر فایل + کپشنِ پست
                 file_path, remote_caption = await loop.run_in_executor(
                     None, download_media, url
                 )
 
-                # ساختن کپشن نهایی
-                caption_parts = []
+                # --- ساختن کپشن نهایی ---
+                caption_parts: list[str] = []
 
                 # ۱) کپشن خود پست (اینستا/تیک‌تاک/یوتیوب)
                 if remote_caption:
                     caption_parts.append(remote_caption.strip())
 
-                # ۲) در صورت نیاز (اختیاری) می‌تونی متن خود کاربر رو هم اضافه کنی
-                # فعلاً نمی‌خواهی، پس این بخش رو می‌ذاریم کامنت بمونه
-                # original_text = message.text or ""
-                # user_caption = original_text.replace(url, "").strip()
-                # if user_caption:
-                #     caption_parts.append(user_caption)
-
-                # اگر هیچ کپشنی نبود، یه متن پیش‌فرض بذار
+                # ۲) اگر هیچ کپشنی نبود، یه متن پیش‌فرض بذار
                 if not caption_parts:
                     caption_parts.append("اینم فایل دانلود شده ✅")
 
                 # ۳) در انتها آیدی ربات
                 caption_parts.append(BOT_USERNAME)
 
-                # چسبوندن همه بخش‌ها با دو خط فاصله بینشون
+                # چسبوندن همه بخش‌ها با دو خط فاصله
                 caption = "\n\n".join(caption_parts)
 
                 # اگر خیلی طولانی شد، یه مقدار کوتاهش کن که از لیمیت تلگرام نزنه بیرون
                 if len(caption) > 1000:
                     caption = caption[:1000] + "…"
 
-                # ارسال فایل به صورت document
+                # --- ارسال فایل به صورت document ---
                 try:
                     with open(file_path, "rb") as f:
                         await message.reply_document(
@@ -223,8 +209,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     folder = os.path.dirname(file_path)
                     shutil.rmtree(folder, ignore_errors=True)
 
-          
-
             except Exception as e:
                 print("download error:", e)
                 await message.reply_text(
@@ -232,12 +216,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "ممکنه لینک مشکل داشته باشه، یا سایت اجازه دانلود نده."
                 )
 
-            return
+            return  # چون لینک هندل شد، دیگه لازم نیست ادامه بدیم
 
-   
-        
-        
-    # گروه / سوپرگروه
+    # --- اگر لینک نبود، برگرد به رفتار چت معمولی قبلی ---
+
     if chat_type in ("group", "supergroup"):
         text_lower = text.lower()
         if BOT_USERNAME in text_lower:
@@ -246,7 +228,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             return
     else:
-        # پی‌وی
         last = context.user_data.get("last_reply")
         response = handle_response(text, last)
 
@@ -283,9 +264,5 @@ if __name__ == "__main__":
 
      print("polling")
      app.run_polling()
-
-
-
-
 
 
