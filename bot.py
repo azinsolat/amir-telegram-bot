@@ -207,10 +207,17 @@ def fetch_instagram_profile_via_apify(profile_url: str) -> tuple[str, dict]:
     website = external_urls[0] if external_urls else None
 
     # عکس پروفایل HD اگر بود، وگرنه معمولی
-    profile_pic_url = (
-        data.get("profilePicUrlHD")
-        or data.get("profilePicUrl")
-    )
+   profile_pic_url = data.get("profilePicUrlHD") or data.get("profilePicUrl")
+
+# اگر لینک وجود داشت، نسخه‌ی 1080p رو درخواست کن
+if profile_pic_url:
+    if "s150x150" in profile_pic_url:
+        # تبدیل URL کوچک → URL بزرگ
+        profile_pic_url = profile_pic_url.replace("s150x150", "s1080x1080")
+
+    # اضافه کردن پارامتر برای اجبار به کیفیت بالاتر
+    if "?size=1080" not in profile_pic_url:
+        profile_pic_url += "?size=1080"
 
     if not profile_pic_url:
         raise ValueError("لینک عکس پروفایل پیدا نشد.")
@@ -445,3 +452,4 @@ if __name__ == "__main__":
 
     print("polling")
     app.run_polling()
+
