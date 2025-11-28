@@ -1,5 +1,5 @@
 from telegram import Update
-from telegram.ext import Application,CommandHandler,MessageHandler,filters,ContextTypes
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import random
 import os
 import re
@@ -9,12 +9,20 @@ from yt_dlp import YoutubeDL
 import asyncio
 import urllib.parse
 import urllib.request
+import requests
 
 
-
+# ================== تنظیم توکن‌ها ==================
 
 TOKEN = os.environ["TELEGRAM_TOKEN"]
 BOT_USERNAME = os.environ.get("BOT_USERNAME", "@amirbeautybot")
+
+# توکن‌ها و شناسه‌ی Apify
+APIFY_TOKEN = os.getenv("APIFY_TOKEN")
+APIFY_ACTOR_ID = os.getenv("APIFY_ACTOR_ID")  # مثلا "shu8hvrXbJby3Eb9W~instagram-scraper"
+
+
+# ================== دستورات ساده ==================
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -23,7 +31,6 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"💜 سلام {name} عزیز\n"
         "به ربات امیر خوش اومدی 😈"
     )
-
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -36,10 +43,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "همین‌طور به بعضی از نوشته‌های شما هم پاسخ می‌دم 😉"
     )
 
-    
-async def custom_command(update:Update , context:ContextTypes.DEFAULT_TYPE):
-       await update.message.reply_text("این یک دستور سفارشی هست")
 
+async def custom_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("این یک دستور سفارشی هست")
 
 
 async def amir_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -49,6 +55,7 @@ async def amir_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+# ================== چت معمولی ==================
 
 def handle_response(text: str, last_reply=None):
     if not text:
@@ -117,13 +124,14 @@ def handle_response(text: str, last_reply=None):
     if "چیکارا میکنی" in user_text or "چیکار میکنی" in user_text:
         return "داشتم مانگا میخوندم که مزاحمم شدی😔"
 
-    return random.choice(["داداش نمیفهمم چی میگی بدو برو به کارات برس وقت مام نگیر ","کس نگو برو پی کارت","متوحه نمیشم برو بعدا بیا که حال داشته باشم"]) 
+    return random.choice([
+        "داداش نمیفهمم چی میگی بدو برو به کارات برس وقت مام نگیر ",
+        "کس نگو برو پی کارت",
+        "متوحه نمیشم برو بعدا بیا که حال داشته باشم"
+    ])
 
 
-
-
-
-
+# ================== توابع اینستاگرام / Apify ==================
 
 def is_instagram_profile_url(url: str) -> bool:
     """
@@ -151,75 +159,88 @@ def is_instagram_profile_url(url: str) -> bool:
     return True
 
 
-
-
-
-
-
-def fetch_instagram_profile(url: str) -> tuple[str, dict]:
+def fetch_instagram_profile_via_apify(profile_url: str) -> tuple[str, dict]:
     """
-    اطلاعات پروفایل اینستاگرام را می‌گیرد و عکس پروفایل را دانلود می‌کند.
+    پروفایل اینستاگرام را با استفاده از Apify می‌خواند
+    و عکس پروفایل را دانلود می‌کند.
 
     خروجی:
-    - مسیر فایل عکس پروفایل
-    - دیکشنری اطلاعات پروفایل (پرایوت بودن، تعداد پست، فالوور، فالوینگ، بیو، وبسایت)
+      - مسیر فایل عکس پروفایل
+      - دیکشنری اطلاعات پروفایل (پرایوت بودن، فالوورها، فالوینگ، پست‌ها، بیو، وبسایت، ...)
     """
-    temp_dir = tempfile.mkdtemp(prefix="amirbot_igprofile_")
 
-    ydl_opts = {
-        "skip_download": True,   # هیچ پستی را دانلود نکن، فقط اطلاعات را بگیر
-        "quiet": True,
+    if not APIFY_TOKEN or not APIFY_ACTOR_ID:
+        raise RuntimeError("APIFY_TOKEN یا APIFY_ACTOR_ID تنظیم نشده است.")
+
+    # آدرس API برای اجرای actor و گرفتن dataset به صورت sync
+    api_url = (
+        f"https://api.apify.com/v2/acts/{APIFY_ACTOR_ID}/run-sync-get-dataset-items"
+        f"?token={APIFY_TOKEN}"
+    )
+
+    # طبق داک Apify Instagram Scraper
+    payload = {
+        "directUrls": [profile_url],
+        "resultsType": "details",  # دقیقا همونی که تو UI انتخاب کردی
+        "resultsLimit": 1,
     }
 
-    with YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=False)
+    resp = requests.post(api_url, json=payload, timeout=60)
+    resp.raise_for_status()
 
-    # --- عکس پروفایل ---
+    items = resp.json()
+    if not items:
+        raise ValueError("Apify هیچ اطلاعاتی برنگرداند.")
 
-    thumb_url = None
-    if "thumbnail" in info:
-        thumb_url = info["thumbnail"]
-    elif "thumbnails" in info and info["thumbnails"]:
-        thumb_url = info["thumbnails"][-1].get("url")
+    data = items[0]  # همون آبجکت بزرگی که JSONش رو فرستادی
 
-    if not thumb_url:
-        raise ValueError("نتوانستم عکس پروفایل را پیدا کنم.")
+    # --- مَپ کردن به فیلدهای مهم (طبق JSON خودت) ---
 
-    parsed_thumb = urllib.parse.urlparse(thumb_url)
-    ext = os.path.splitext(parsed_thumb.path)[1] or ".jpg"
+    username = data.get("username")
+    full_name = data.get("fullName")
+    biography = data.get("biography")
+    followers = data.get("followersCount")
+    following = data.get("followsCount")
+    posts = data.get("postsCount")
+    is_private = data.get("private")
+    external_urls = data.get("externalUrls") or []
+    website = external_urls[0] if external_urls else None
+
+    # عکس پروفایل HD اگر بود، وگرنه معمولی
+    profile_pic_url = (
+        data.get("profilePicUrlHD")
+        or data.get("profilePicUrl")
+    )
+
+    if not profile_pic_url:
+        raise ValueError("لینک عکس پروفایل پیدا نشد.")
+
+    # یک پوشه موقت برای ذخیره عکس
+    temp_dir = tempfile.mkdtemp(prefix="amirbot_igprofile_")
+
+    parsed = urllib.parse.urlparse(profile_pic_url)
+    ext = os.path.splitext(parsed.path)[1] or ".jpg"
     file_path = os.path.join(temp_dir, f"profile{ext}")
 
-    with urllib.request.urlopen(thumb_url) as resp, open(file_path, "wb") as out:
-        out.write(resp.read())
+    # دانلود عکس
+    with urllib.request.urlopen(profile_pic_url) as r, open(file_path, "wb") as out:
+        out.write(r.read())
 
-    # --- اطلاعات پروفایل ---
-
-    meta: dict = {}
-
-    # خیلی از این فیلدها ممکن است وجود نداشته باشند؛ برای همین .get استفاده می‌کنیم
-    meta["is_private"] = info.get("is_private")
-    meta["posts"] = info.get("n_entries") or info.get("playlist_count")
-    meta["followers"] = (
-        info.get("channel_follower_count")
-        or info.get("followers")
-        or info.get("like_count")
-    )
-    meta["following"] = info.get("following_count")
-    meta["biography"] = info.get("description")
-    meta["website"] = info.get("channel_url") or info.get("uploader_url")
+    meta = {
+        "username": username,
+        "full_name": full_name,
+        "biography": biography,
+        "followers": followers,
+        "following": following,
+        "posts": posts,
+        "is_private": is_private,
+        "website": website,
+    }
 
     return file_path, meta
 
 
-
-
-
-
-
-
-
-
-
+# ================== دانلود ویدیو / پست ==================
 
 def download_media(url: str) -> tuple[str, str | None]:
     """
@@ -246,7 +267,7 @@ def download_media(url: str) -> tuple[str, str | None]:
     return file_path, caption
 
 
-
+# ================== هندل پیام‌ها ==================
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
@@ -263,14 +284,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if url_match:
         url = url_match.group(1)
 
-        # --- ۱) اگر لینکِ پروفایل اینستاگرام بود ---
+        # --- ۱) اگر لینکِ پروفایل اینستاگرام بود → Apify ---
         if is_instagram_profile_url(url):
-            await message.reply_text("صبر کن دارم اطلاعات پیج رو می‌گیرم... ⏳")
+            await message.reply_text("صبر کن دارم اطلاعات پیج رو از Apify می‌گیرم... ⏳")
 
             try:
                 loop = asyncio.get_running_loop()
                 file_path, meta = await loop.run_in_executor(
-                    None, fetch_instagram_profile, url
+                    None, fetch_instagram_profile_via_apify, url
                 )
 
                 # ساختن متن کپشن
@@ -319,10 +340,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     shutil.rmtree(folder, ignore_errors=True)
 
             except Exception as e:
-                print("ig profile error:", e)
+                print("apify ig profile error:", e)
                 await message.reply_text(
-                    "نتونستم اطلاعات این پیج رو بگیرم 😕\n"
-                    "ممکنه پیج محدودیت داشته باشه یا اینستاگرام اجازه نده."
+                    "نتونستم اطلاعات این پیج رو از Apify بگیرم 😕\n"
+                    "ممکنه Actor درست تنظیم نشده باشه یا محدودیت درخواست خورده باشی."
                 )
 
             return  # دیگه ادامه نده، چون همین پیام هندل شد
@@ -343,9 +364,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 file_path, remote_caption = await loop.run_in_executor(
                     None, download_media, url
                 )
-
-            
-
 
                 # --- ساختن کپشن نهایی ---
                 caption_parts: list[str] = []
@@ -405,34 +423,25 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await message.reply_text(response)
 
 
+# ================== لاگ ارورها ==================
+
+async def error(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print(f'update:{update} cause error:{context.error}')
 
 
-
-
-
-
-
-
-
-
-async def error(update:Update , context:ContextTypes.DEFAULT_TYPE):
-     print(f'update:{update} cause error:{context.error}')
-
+# ================== اجرای برنامه ==================
 
 if __name__ == "__main__":
-     print("bot is starting")
-     app= Application.builder().token(TOKEN).build()
+    print("bot is starting")
+    app = Application.builder().token(TOKEN).build()
 
-     app.add_handler(CommandHandler("start",start_command))
-     app.add_handler(CommandHandler("help",help_command))
-     app.add_handler(CommandHandler("custom",custom_command))
-     app.add_handler(CommandHandler("amir", amir_command))
+    app.add_handler(CommandHandler("start", start_command))
+    app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("custom", custom_command))
+    app.add_handler(CommandHandler("amir", amir_command))
 
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_error_handler(error)
 
-     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND , handle_message))
-     app.add_error_handler(error)
-
-     print("polling")
-     app.run_polling()
-
-
+    print("polling")
+    app.run_polling()
