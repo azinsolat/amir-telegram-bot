@@ -162,27 +162,24 @@ def is_instagram_profile_url(url: str) -> bool:
 def fetch_instagram_profile_via_apify(profile_url: str) -> tuple[str, dict]:
     """
     پروفایل اینستاگرام را با استفاده از Apify می‌خواند
-    و عکس پروفایل را دانلود می‌کند.
-
-    خروجی:
-      - مسیر فایل عکس پروفایل
-      - دیکشنری اطلاعات پروفایل (پرایوت بودن، فالوورها، فالوینگ، پست‌ها، بیو، وبسایت، ...)
+    و عکس پروفایل را با کیفیت بالا دانلود می‌کند.
     """
 
     if not APIFY_TOKEN or not APIFY_ACTOR_ID:
         raise RuntimeError("APIFY_TOKEN یا APIFY_ACTOR_ID تنظیم نشده است.")
 
-    # آدرس API برای اجرای actor و گرفتن dataset به صورت sync
+    # اجرای Actor به صورت Sync
     api_url = (
         f"https://api.apify.com/v2/acts/{APIFY_ACTOR_ID}/run-sync-get-dataset-items"
         f"?token={APIFY_TOKEN}"
     )
 
-    # طبق داک Apify Instagram Scraper
     payload = {
         "directUrls": [profile_url],
-        "resultsType": "details",  # دقیقا همونی که تو UI انتخاب کردی
+        "resultsType": "details",
         "resultsLimit": 1,
+        "scrapeProfilePicture": True,
+        "downloadImages": True,
     }
 
     resp = requests.post(api_url, json=payload, timeout=60)
@@ -192,10 +189,9 @@ def fetch_instagram_profile_via_apify(profile_url: str) -> tuple[str, dict]:
     if not items:
         raise ValueError("Apify هیچ اطلاعاتی برنگرداند.")
 
-    data = items[0]  # همون آبجکت بزرگی که JSONش رو فرستادی
+    data = items[0]
 
-    # --- مَپ کردن به فیلدهای مهم (طبق JSON خودت) ---
-
+    # ---- اطلاعات پروفایل ----
     username = data.get("username")
     full_name = data.get("fullName")
     biography = data.get("biography")
@@ -206,30 +202,26 @@ def fetch_instagram_profile_via_apify(profile_url: str) -> tuple[str, dict]:
     external_urls = data.get("externalUrls") or []
     website = external_urls[0] if external_urls else None
 
-    # عکس پروفایل HD اگر بود، وگرنه معمولی
-   profile_pic_url = data.get("profilePicUrlHD") or data.get("profilePicUrl")
-
-# اگر لینک وجود داشت، نسخه‌ی 1080p رو درخواست کن
-if profile_pic_url:
-    if "s150x150" in profile_pic_url:
-        # تبدیل URL کوچک → URL بزرگ
-        profile_pic_url = profile_pic_url.replace("s150x150", "s1080x1080")
-
-    # اضافه کردن پارامتر برای اجبار به کیفیت بالاتر
-    if "?size=1080" not in profile_pic_url:
-        profile_pic_url += "?size=1080"
+    # ---- عکس پروفایل ----
+    profile_pic_url = data.get("profilePicUrlHD") or data.get("profilePicUrl")
 
     if not profile_pic_url:
         raise ValueError("لینک عکس پروفایل پیدا نشد.")
 
-    # یک پوشه موقت برای ذخیره عکس
+    # اجبار به کیفیت بیشتر
+    if "s150x150" in profile_pic_url:
+        profile_pic_url = profile_pic_url.replace("s150x150", "s1080x1080")
+
+    if "?size=1080" not in profile_pic_url:
+        profile_pic_url += "?size=1080"
+
+    # ---- دانلود عکس ----
     temp_dir = tempfile.mkdtemp(prefix="amirbot_igprofile_")
 
     parsed = urllib.parse.urlparse(profile_pic_url)
     ext = os.path.splitext(parsed.path)[1] or ".jpg"
     file_path = os.path.join(temp_dir, f"profile{ext}")
 
-    # دانلود عکس
     with urllib.request.urlopen(profile_pic_url) as r, open(file_path, "wb") as out:
         out.write(r.read())
 
@@ -246,6 +238,11 @@ if profile_pic_url:
 
     return file_path, meta
 
+
+
+
+
+ 
 
 # ================== دانلود ویدیو / پست ==================
 
@@ -452,4 +449,5 @@ if __name__ == "__main__":
 
     print("polling")
     app.run_polling()
+
 
