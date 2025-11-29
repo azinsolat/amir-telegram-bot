@@ -1,4 +1,4 @@
-from telegram import Update
+from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import random
 import os
@@ -12,6 +12,30 @@ import urllib.request
 import requests
 
 
+# ================== هندل دکمه‌ها ==================
+
+async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+
+    if text == "🗨 شروع چت معمولی":
+        context.user_data["chat_enabled"] = True
+        await update.message.reply_text("چت فعال شد! 😊 هرچی دوست داری بنویس 🌸")
+        return
+
+    elif text == "📸 دانلود اینستاگرام":
+        await update.message.reply_text("لینک پروفایل یا پست اینستاگرام رو بفرست 📎")
+        return
+
+    elif text == "⚙️ کمک و راهنما":
+        await update.message.reply_text(
+            "راهنما:\n\n"
+            "🗨 شروع چت معمولی → فعال‌کردن گفتگو با ربات\n"
+            "📸 دانلود اینستاگرام → دانلود عکس پروفایل/پست\n"
+            "⚙️ کمک و راهنما → همین صفحه\n"
+        )
+        return
+
+
 # ================== تنظیم توکن‌ها ==================
 
 TOKEN = os.environ["TELEGRAM_TOKEN"]
@@ -19,7 +43,7 @@ BOT_USERNAME = os.environ.get("BOT_USERNAME", "@amirbeautybot")
 
 # توکن‌ها و شناسه‌ی Apify
 APIFY_TOKEN = os.getenv("APIFY_TOKEN")
-APIFY_ACTOR_ID = os.getenv("APIFY_ACTOR_ID")  # مثلا "shu8hvrXbJby3Eb9W~instagram-scraper"
+APIFY_ACTOR_ID = os.getenv("APIFY_ACTOR_ID")  # مثلا "apify~instagram-scraper"
 
 
 # ================== دستورات ساده ==================
@@ -27,20 +51,35 @@ APIFY_ACTOR_ID = os.getenv("APIFY_ACTOR_ID")  # مثلا "shu8hvrXbJby3Eb9W~inst
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     name = user.first_name or ""
+
+    # کیبورد دکمه‌ها
+    keyboard = [
+        ["🗨 شروع چت معمولی"],
+        ["📸 دانلود اینستاگرام"],
+        ["⚙️ کمک و راهنما"],
+    ]
+
+    reply_markup = ReplyKeyboardMarkup(
+        keyboard, resize_keyboard=True, one_time_keyboard=False
+    )
+
+    # در شروع، چت معمولی قفل است
+    context.user_data["chat_enabled"] = False
+
     await update.message.reply_text(
         f"💜 سلام {name} عزیز\n"
-        "به ربات امیر خوش اومدی 😈"
+        "به ربات امیر خوش اومدی 😈\n\n"
+        "یکی از گزینه‌ها رو انتخاب کن:",
+        reply_markup=reply_markup
     )
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "من یک ربات ساده برای شروع هستم.\n\n"
-        "دستورات من:\n"
-        "/start - شروع ربات\n"
-        "/help - راهنما\n"
-        "/custom - دستور سفارشی\n\n"
-        "همین‌طور به بعضی از نوشته‌های شما هم پاسخ می‌دم 😉"
+        "سلام کاربر عزیز من ربات امیر هستم.\n"
+        "برای شروع می‌تونی روی دکمه «🗨 شروع چت معمولی» کلیک کنی تا باهم گپ بزنیم 😁\n"
+        "وقتی روی دکمه «📸 دانلود اینستاگرام» کلیک کنی، من منتظر می‌مونم برام لینک ویدیویی "
+        "یا لینک پست/پروفایل اینستاگرام رو بفرستی تا برات دانلود کنم."
     )
 
 
@@ -59,7 +98,7 @@ async def amir_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def handle_response(text: str, last_reply=None):
     if not text:
-        return "یه حرفی بزنن یه چیزی بگوو😞"
+        return "یه حرفی بزن یه چیزی بگوو😞"
 
     user_text = text.lower()
 
@@ -127,7 +166,7 @@ def handle_response(text: str, last_reply=None):
     return random.choice([
         "داداش نمیفهمم چی میگی بدو برو به کارات برس وقت مام نگیر ",
         "کس نگو برو پی کارت",
-        "متوحه نمیشم برو بعدا بیا که حال داشته باشم"
+        "متوجه نمیشم برو بعدا بیا که حال داشته باشم"
     ])
 
 
@@ -162,13 +201,12 @@ def is_instagram_profile_url(url: str) -> bool:
 def fetch_instagram_profile_via_apify(profile_url: str) -> tuple[str, dict]:
     """
     پروفایل اینستاگرام را با استفاده از Apify می‌خواند
-    و عکس پروفایل را با کیفیت بالا دانلود می‌کند.
+    و عکس پروفایل را دانلود می‌کند.
     """
 
     if not APIFY_TOKEN or not APIFY_ACTOR_ID:
         raise RuntimeError("APIFY_TOKEN یا APIFY_ACTOR_ID تنظیم نشده است.")
 
-    # اجرای Actor به صورت Sync
     api_url = (
         f"https://api.apify.com/v2/acts/{APIFY_ACTOR_ID}/run-sync-get-dataset-items"
         f"?token={APIFY_TOKEN}"
@@ -208,13 +246,6 @@ def fetch_instagram_profile_via_apify(profile_url: str) -> tuple[str, dict]:
     if not profile_pic_url:
         raise ValueError("لینک عکس پروفایل پیدا نشد.")
 
-    # اجبار به کیفیت بیشتر
-    if "s150x150" in profile_pic_url:
-        profile_pic_url = profile_pic_url.replace("s150x150", "s1080x1080")
-
-    if "?size=1080" not in profile_pic_url:
-        profile_pic_url += "?size=1080"
-
     # ---- دانلود عکس ----
     temp_dir = tempfile.mkdtemp(prefix="amirbot_igprofile_")
 
@@ -239,11 +270,6 @@ def fetch_instagram_profile_via_apify(profile_url: str) -> tuple[str, dict]:
     return file_path, meta
 
 
-
-
-
- 
-
 # ================== دانلود ویدیو / پست ==================
 
 def download_media(url: str) -> tuple[str, str | None]:
@@ -265,7 +291,6 @@ def download_media(url: str) -> tuple[str, str | None]:
         info = ydl.extract_info(url, download=True)
         file_path = ydl.prepare_filename(info)
 
-    # کپشن پست (برای اینستا، تیک‌تاک، یوتیوب و … معمولا این فیلد هست)
     caption = info.get("description") or ""
 
     return file_path, caption
@@ -274,12 +299,20 @@ def download_media(url: str) -> tuple[str, str | None]:
 # ================== هندل پیام‌ها ==================
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     if not update.message or not update.message.text:
         return
 
     message = update.message
     text = message.text
     chat_type = message.chat.type
+
+    # اگر چت فعال نیست (و پیام، دکمه نیست) راهنما بده
+    if not context.user_data.get("chat_enabled"):
+        await message.reply_text(
+            "برای شروع چت معمولی، دکمه 🗨 شروع چت معمولی رو بزن.\nیا /help"
+        )
+        return
 
     print(f"user: {message.chat.id}, chat type: {chat_type}, text: {text}")
 
@@ -298,7 +331,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     None, fetch_instagram_profile_via_apify, url
                 )
 
-                # ساختن متن کپشن
                 is_private = meta.get("is_private")
                 if is_private is True:
                     priv_text = "🔐 پیج خصوصی"
@@ -334,11 +366,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
                 try:
                     with open(file_path, "rb") as f:
-                        # 👇 به صورت photo، نه document
-                        await message.reply_photo(
-                            f,
-                            caption=caption
-                        )
+                        await message.reply_photo(f, caption=caption)
                 finally:
                     folder = os.path.dirname(file_path)
                     shutil.rmtree(folder, ignore_errors=True)
@@ -350,9 +378,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "ممکنه Actor درست تنظیم نشده باشه یا محدودیت درخواست خورده باشی."
                 )
 
-            return  # دیگه ادامه نده، چون همین پیام هندل شد
+            return
 
-        # --- ۲) اگر لینک پست ویدیو از IG/YT/TikTok و ... بود (همون قبلی) ---
+        # --- ۲) اگر لینک پست ویدیو از IG/YT/TikTok و ... بود ---
         if any(domain in url for domain in (
             "youtube.com",
             "youtu.be",
@@ -369,34 +397,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     None, download_media, url
                 )
 
-                # --- ساختن کپشن نهایی ---
                 caption_parts: list[str] = []
 
-                # ۱) کپشن خود پست (اینستا/تیک‌تاک/یوتیوب)
                 if remote_caption:
                     caption_parts.append(remote_caption.strip())
 
-                # ۲) اگر هیچ کپشنی نبود، یه متن پیش‌فرض بذار
                 if not caption_parts:
                     caption_parts.append("اینم فایل دانلود شده ✅")
 
-                # ۳) در انتها آیدی ربات
                 caption_parts.append(BOT_USERNAME)
 
-                # چسبوندن همه بخش‌ها با دو خط فاصله
                 caption = "\n\n".join(caption_parts)
 
-                # اگر خیلی طولانی شد، یه مقدار کوتاهش کن که از لیمیت تلگرام نزنه بیرون
                 if len(caption) > 1000:
                     caption = caption[:1000] + "…"
 
-                # --- ارسال فایل به صورت document ---
                 try:
                     with open(file_path, "rb") as f:
-                        await message.reply_document(
-                            f,
-                            caption=caption
-                        )
+                        await message.reply_document(f, caption=caption)
                 finally:
                     folder = os.path.dirname(file_path)
                     shutil.rmtree(folder, ignore_errors=True)
@@ -408,14 +426,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "ممکنه لینک مشکل داشته باشه، یا سایت اجازه دانلود نده."
                 )
 
-            return  # چون لینک هندل شد، دیگه لازم نیست ادامه بدیم
+            return
 
     # --- اگر لینک نبود، برگرد به رفتار چت معمولی قبلی ---
 
     if chat_type in ("group", "supergroup"):
         text_lower = text.lower()
-        if BOT_USERNAME in text_lower:
-            t = text_lower.replace(BOT_USERNAME, "").strip()
+        if BOT_USERNAME.lower() in text_lower:
+            t = text_lower.replace(BOT_USERNAME.lower(), "").strip()
             response = handle_response(t)
         else:
             return
@@ -444,10 +462,15 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("custom", custom_command))
     app.add_handler(CommandHandler("amir", amir_command))
 
+    # هندل دکمه‌ها
+    app.add_handler(MessageHandler(
+        filters.TEXT & filters.Regex("^(🗨 شروع چت معمولی|📸 دانلود اینستاگرام|⚙️ کمک و راهنما)$"),
+        handle_buttons
+    ))
+
+    # هندل پیام‌های متنی معمولی
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_error_handler(error)
 
     print("polling")
     app.run_polling()
-
-
