@@ -33,9 +33,6 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-
-# ================== تنظیم توکن‌ها ==================
-
 TOKEN = os.environ["TELEGRAM_TOKEN"]
 BOT_USERNAME = os.environ.get("BOT_USERNAME", "@amirbeautybot")
 
@@ -472,5 +469,6 @@ if __name__ == "__main__":
 
     print("polling")
     app.run_polling()
+
 
 
