@@ -43,7 +43,7 @@ BOT_USERNAME = os.environ.get("BOT_USERNAME", "@amirbeautybot")
 
 # توکن‌ها و شناسه‌ی Apify
 APIFY_TOKEN = os.getenv("APIFY_TOKEN")
-APIFY_ACTOR_ID = os.getenv("APIFY_ACTOR_ID")  # مثلا "apify~instagram-scraper"
+APIFY_ACTOR_ID = os.getenv("APIFY_ACTOR_ID")  
 
 
 # ================== دستورات ساده ==================
@@ -474,3 +474,4 @@ if __name__ == "__main__":
 
     print("polling")
     app.run_polling()
+
