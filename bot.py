@@ -12,8 +12,6 @@ import urllib.request
 import requests
 
 
-# ================== هندل دکمه‌ها ==================
-
 async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
 
@@ -474,4 +472,5 @@ if __name__ == "__main__":
 
     print("polling")
     app.run_polling()
+
 
