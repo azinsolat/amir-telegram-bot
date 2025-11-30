@@ -1,5 +1,17 @@
-from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram import (
+    Update,
+    ReplyKeyboardMarkup,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+)
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    CallbackQueryHandler,
+    filters,
+    ContextTypes,
+)
 import random
 import os
 import re
@@ -11,6 +23,18 @@ import urllib.parse
 import urllib.request
 import requests
 
+# ================== تنظیمات عمومی ==================
+
+TOKEN = os.environ["TELEGRAM_TOKEN"]
+BOT_USERNAME = os.environ.get("BOT_USERNAME", "@amirbeautybot")
+
+APIFY_TOKEN = os.getenv("APIFY_TOKEN")
+APIFY_ACTOR_ID = os.getenv("APIFY_ACTOR_ID")
+
+MAX_TG_FILE_SIZE = 48 * 1024 * 1024  # حدوداً ۴۸ مگ، کمی کمتر از محدودیت تلگرام
+
+
+# ================== دکمه‌های اصلی ==================
 
 async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
@@ -21,24 +45,17 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     elif text == "📸 دانلود اینستاگرام":
-        await update.message.reply_text("لینک پروفایل یا پست اینستاگرام رو بفرست 📎")
+        await update.message.reply_text("لینک پروفایل یا پست اینستاگرام/ویدیو رو بفرست 📎")
         return
 
     elif text == "⚙️ کمک و راهنما":
         await update.message.reply_text(
             "راهنما:\n\n"
             "🗨 شروع چت معمولی → فعال‌کردن گفتگو با ربات\n"
-            "📸 دانلود اینستاگرام → دانلود عکس پروفایل/پست\n"
+            "📸 دانلود اینستاگرام → دانلود عکس پروفایل/پست/ویدیو\n"
             "⚙️ کمک و راهنما → همین صفحه\n"
         )
         return
-
-TOKEN = os.environ["TELEGRAM_TOKEN"]
-BOT_USERNAME = os.environ.get("BOT_USERNAME", "@amirbeautybot")
-
-# توکن‌ها و شناسه‌ی Apify
-APIFY_TOKEN = os.getenv("APIFY_TOKEN")
-APIFY_ACTOR_ID = os.getenv("APIFY_ACTOR_ID")  
 
 
 # ================== دستورات ساده ==================
@@ -47,7 +64,6 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     name = user.first_name or ""
 
-    # کیبورد دکمه‌ها
     keyboard = [
         ["🗨 شروع چت معمولی"],
         ["📸 دانلود اینستاگرام"],
@@ -58,7 +74,6 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard, resize_keyboard=True, one_time_keyboard=False
     )
 
-    # در شروع، چت معمولی قفل است
     context.user_data["chat_enabled"] = False
 
     await update.message.reply_text(
@@ -97,12 +112,10 @@ def handle_response(text: str, last_reply=None):
 
     user_text = text.lower()
 
-    # 👇 اول منطق «لب و رد کن بیاد» رو چک کن
     if last_reply and "لب و رد کن بیاد" in last_reply:
         if "باشه" in user_text:
             return "👌🏻👈🏻"
 
-    # بقیه‌ی جواب‌ها
     if "hi" in user_text or "سلام" in user_text or "سلام خوشگله" in user_text:
         return random.choice([
             "سلام عزیزم",
@@ -143,7 +156,7 @@ def handle_response(text: str, last_reply=None):
         return random.choice([
             "لب و رد کن بیاد 🫦😈",
             "جووون منی",
-            "اوفففف 😉",
+            "اوففف 😉",
         ])
 
     if "باشه" in user_text:
@@ -165,13 +178,9 @@ def handle_response(text: str, last_reply=None):
     ])
 
 
-# ================== توابع اینستاگرام / Apify ==================
+# ================== اینستاگرام / Apify ==================
 
 def is_instagram_profile_url(url: str) -> bool:
-    """
-    بررسی می‌کند که آیا لینک، لینک پروفایل اینستاگرام است (نه پست/ریل/استوری).
-    مثال: https://www.instagram.com/username/
-    """
     parsed = urllib.parse.urlparse(url)
     host = parsed.netloc.lower()
 
@@ -183,10 +192,8 @@ def is_instagram_profile_url(url: str) -> bool:
     if not path:
         return False
 
-    # اولین بخش مسیر
     first = path.split("/")[0]
 
-    # اگر /p/ یا /reel/ یا /stories/ بود یعنی پست/استوری است، نه پروفایل
     if first in ("p", "reel", "tv", "stories"):
         return False
 
@@ -194,11 +201,6 @@ def is_instagram_profile_url(url: str) -> bool:
 
 
 def fetch_instagram_profile_via_apify(profile_url: str) -> tuple[str, dict]:
-    """
-    پروفایل اینستاگرام را با استفاده از Apify می‌خواند
-    و عکس پروفایل را دانلود می‌کند.
-    """
-
     if not APIFY_TOKEN or not APIFY_ACTOR_ID:
         raise RuntimeError("APIFY_TOKEN یا APIFY_ACTOR_ID تنظیم نشده است.")
 
@@ -224,7 +226,6 @@ def fetch_instagram_profile_via_apify(profile_url: str) -> tuple[str, dict]:
 
     data = items[0]
 
-    # ---- اطلاعات پروفایل ----
     username = data.get("username")
     full_name = data.get("fullName")
     biography = data.get("biography")
@@ -235,13 +236,11 @@ def fetch_instagram_profile_via_apify(profile_url: str) -> tuple[str, dict]:
     external_urls = data.get("externalUrls") or []
     website = external_urls[0] if external_urls else None
 
-    # ---- عکس پروفایل ----
     profile_pic_url = data.get("profilePicUrlHD") or data.get("profilePicUrl")
 
     if not profile_pic_url:
         raise ValueError("لینک عکس پروفایل پیدا نشد.")
 
-    # ---- دانلود عکس ----
     temp_dir = tempfile.mkdtemp(prefix="amirbot_igprofile_")
 
     parsed = urllib.parse.urlparse(profile_pic_url)
@@ -265,14 +264,9 @@ def fetch_instagram_profile_via_apify(profile_url: str) -> tuple[str, dict]:
     return file_path, meta
 
 
-# ================== دانلود ویدیو / پست ==================
+# ================== دانلود عمومی (IG / TikTok / ... ) ==================
 
 def download_media(url: str) -> tuple[str, str | None]:
-    """
-    ویدیو/عکس را دانلود می‌کند و:
-    - مسیر فایل
-    - کپشن/توضیحات پست (در صورت وجود) را برمی‌گرداند
-    """
     temp_dir = tempfile.mkdtemp(prefix="amirbot_")
 
     ydl_opts = {
@@ -291,6 +285,127 @@ def download_media(url: str) -> tuple[str, str | None]:
     return file_path, caption
 
 
+# ================== یوتیوب: گرفتن کیفیت‌ها و دانلود ==================
+
+def get_youtube_quality_options(url: str):
+    """
+    کیفیت‌های مختلف را از یوتیوب می‌گیرد (چند تا mp3 و چند ارتفاع mp4).
+    خروجی: title, options
+    هر option: dict(id, label, filesize, is_audio, direct_url)
+    """
+
+    ydl_opts = {
+        "format": "bestaudio/best",
+        "quiet": True,
+        "noplaylist": True,
+    }
+
+    with YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+
+    title = info.get("title") or "video"
+    formats = info.get("formats") or []
+
+    options = []
+
+    # --- فرمت‌های صوتی ---
+    audio_formats = [
+        f for f in formats
+        if f.get("vcodec") == "none" and f.get("acodec") != "none"
+    ]
+
+    def pick_closest(target_kbps):
+        best = None
+        best_diff = None
+        for f in audio_formats:
+            abr = f.get("abr")
+            if abr is None:
+                continue
+            diff = abs(abr - target_kbps)
+            if best is None or diff < best_diff:
+                best = f
+                best_diff = diff
+        return best
+
+    a190 = pick_closest(190)
+    a320 = pick_closest(320)
+
+    for fmt, label_prefix in [(a190, "🎵 190k | mp3"), (a320, "🎵 320k | mp3")]:
+        if fmt:
+            size = fmt.get("filesize") or fmt.get("filesize_approx")
+            size_mb = size / (1024 * 1024) if size else None
+            label = label_prefix
+            if size_mb:
+                label += f", {size_mb:.1f} MB"
+
+            options.append({
+                "id": fmt["format_id"],
+                "label": label,
+                "filesize": size,
+                "is_audio": True,
+                "direct_url": fmt.get("url"),
+            })
+
+    # --- فرمت‌های ویدیویی mp4 با ارتفاع‌های مختلف ---
+    target_heights = [144, 240, 360, 480, 720, 1080]
+
+    for h in target_heights:
+        best = None
+        best_diff = None
+        for f in formats:
+            if f.get("vcodec") == "none":
+                continue
+            if f.get("ext") != "mp4":
+                continue
+            height = f.get("height")
+            if not height:
+                continue
+            diff = abs(height - h)
+            if best is None or diff < best_diff:
+                best = f
+                best_diff = diff
+
+        if best:
+            size = best.get("filesize") or best.get("filesize_approx")
+            size_mb = size / (1024 * 1024) if size else None
+
+            label = f"🎬 {h}p | mp4"
+            if size_mb:
+                label += f", {size_mb:.1f} MB"
+
+            options.append({
+                "id": best["format_id"],
+                "label": label,
+                "filesize": size,
+                "is_audio": False,
+                "direct_url": best.get("url"),
+            })
+
+    return title, options
+
+
+def download_specific_format(url: str, format_id: str, is_audio: bool) -> tuple[str, str]:
+    """
+    یک format_id مشخص را دانلود می‌کند (همان کیفیت انتخاب‌شده).
+    اگر is_audio=True باشد، فقط صدا است؛ ولی ما همان فرمت اصلی را نگه می‌داریم.
+    """
+    temp_dir = tempfile.mkdtemp(prefix="amirbot_dl_")
+
+    ydl_opts = {
+        "outtmpl": f"{temp_dir}/%(title)s.%(ext)s",
+        "format": format_id,
+        "noplaylist": True,
+        "quiet": True,
+    }
+
+    with YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=True)
+        file_path = ydl.prepare_filename(info)
+
+    caption = info.get("description") or ""
+    return file_path, caption
+
+
 # ================== هندل پیام‌ها ==================
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -302,21 +417,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = message.text
     chat_type = message.chat.type
 
-    # اگر چت فعال نیست (و پیام، دکمه نیست) راهنما بده
-    if not context.user_data.get("chat_enabled"):
-        await message.reply_text(
-            "برای شروع چت معمولی، دکمه 🗨 شروع چت معمولی رو بزن.\nیا /help"
-        )
-        return
-
     print(f"user: {message.chat.id}, chat type: {chat_type}, text: {text}")
 
-    # --- چک کردن اینکه پیام لینک دارد یا نه ---
+    # --- اگر پیام لینک داشت ---
     url_match = re.search(r'(https?://\S+)', text)
     if url_match:
         url = url_match.group(1)
 
-        # --- ۱) اگر لینکِ پروفایل اینستاگرام بود → Apify ---
+        # ۱) پروفایل اینستاگرام → Apify
         if is_instagram_profile_url(url):
             await message.reply_text("صبر کن دارم اطلاعات پیج رو از Apify می‌گیرم... ⏳")
 
@@ -375,10 +483,48 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             return
 
-        # --- ۲) اگر لینک پست ویدیو از IG/YT/TikTok و ... بود ---
+        # ۲) لینک یوتیوب → نمایش گزینه‌های کیفیت
+        if "youtube.com" in url or "youtu.be" in url:
+            await message.reply_text("دارم کیفیت‌های موجود رو می‌گیرم... ⏳")
+            loop = asyncio.get_running_loop()
+            try:
+                title, options = await loop.run_in_executor(
+                    None, get_youtube_quality_options, url
+                )
+                if not options:
+                    await message.reply_text("کیفیت مناسبی پیدا نکردم 😕")
+                    return
+
+                # ذخیره برای callback
+                context.user_data["yt_url"] = url
+                context.user_data["yt_options"] = {opt["id"]: opt for opt in options}
+
+                buttons = []
+                row = []
+                for opt in options:
+                    row.append(InlineKeyboardButton(
+                        opt["label"],
+                        callback_data=f"yt|{opt['id']}"
+                    ))
+                    if len(row) == 2:
+                        buttons.append(row)
+                        row = []
+                if row:
+                    buttons.append(row)
+
+                reply_markup = InlineKeyboardMarkup(buttons)
+
+                await message.reply_text(
+                    f"🎥 {title}\n\nیکی از کیفیت‌ها رو انتخاب کن:",
+                    reply_markup=reply_markup
+                )
+            except Exception as e:
+                print("get_youtube_quality_options error:", e)
+                await message.reply_text("نتونستم کیفیت‌ها رو بگیرم 😕")
+            return
+
+        # ۳) سایر لینک‌های ویدیو (IG پست، TikTok، X، …) → دانلود ساده
         if any(domain in url for domain in (
-            "youtube.com",
-            "youtu.be",
             "instagram.com",
             "tiktok.com",
             "x.com",
@@ -423,7 +569,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             return
 
-    # --- اگر لینک نبود، برگرد به رفتار چت معمولی قبلی ---
+    # ----- از این‌جا به بعد، اگر لینک نبود → چت معمولی -----
+
+    if not context.user_data.get("chat_enabled"):
+        await message.reply_text(
+            "برای شروع چت معمولی، دکمه 🗨 شروع چت معمولی رو بزن.\nیا /help"
+        )
+        return
 
     if chat_type in ("group", "supergroup"):
         text_lower = text.lower()
@@ -440,10 +592,65 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await message.reply_text(response)
 
 
+# ================== Callback انتخاب کیفیت یوتیوب ==================
+
+async def handle_youtube_quality_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    data = query.data or ""
+    if not data.startswith("yt|"):
+        return
+
+    format_id = data.split("|", 1)[1]
+
+    yt_url = context.user_data.get("yt_url")
+    options_dict = context.user_data.get("yt_options") or {}
+    opt = options_dict.get(format_id)
+
+    if not yt_url or not opt:
+        await query.edit_message_text("این انتخاب قدیمی شده، دوباره لینک رو بفرست 🙂")
+        return
+
+    filesize = opt.get("filesize")
+    direct_url = opt.get("direct_url") or yt_url
+    is_audio = opt.get("is_audio")
+
+    if filesize and filesize > MAX_TG_FILE_SIZE:
+        size_mb = filesize / (1024 * 1024)
+        text = (
+            f"حجم این فایل حدود {size_mb:.1f} مگابایته و تلگرام اجازه نمی‌ده ربات‌ها همچین فایلی رو مستقیم بفرستن 😅\n\n"
+            f"از این لینک می‌تونی مستقیم دانلودش کنی:\n{direct_url}"
+        )
+        await query.edit_message_text(text)
+        return
+
+    await query.edit_message_text("دارم فایل رو دانلود می‌کنم... ⏳")
+
+    loop = asyncio.get_running_loop()
+    try:
+        file_path, caption = await loop.run_in_executor(
+            None, download_specific_format, yt_url, format_id, is_audio
+        )
+
+        caption = (caption or "اینم فایل دانلود شده ✅") + f"\n\n{BOT_USERNAME}"
+
+        try:
+            with open(file_path, "rb") as f:
+                await query.message.reply_document(f, caption=caption)
+        finally:
+            folder = os.path.dirname(file_path)
+            shutil.rmtree(folder, ignore_errors=True)
+
+    except Exception as e:
+        print("download_specific_format error:", e)
+        await query.message.reply_text("در دانلود فایل مشکلی پیش اومد 😕")
+
+
 # ================== لاگ ارورها ==================
 
 async def error(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print(f'update:{update} cause error:{context.error}')
+    print(f"update:{update} cause error:{context.error}")
 
 
 # ================== اجرای برنامه ==================
@@ -457,18 +664,19 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("custom", custom_command))
     app.add_handler(CommandHandler("amir", amir_command))
 
-    # هندل دکمه‌ها
+    # دکمه‌های اصلی
     app.add_handler(MessageHandler(
         filters.TEXT & filters.Regex("^(🗨 شروع چت معمولی|📸 دانلود اینستاگرام|⚙️ کمک و راهنما)$"),
         handle_buttons
     ))
 
-    # هندل پیام‌های متنی معمولی
+    # Callback انتخاب کیفیت یوتیوب
+    app.add_handler(CallbackQueryHandler(handle_youtube_quality_callback))
+
+    # پیام‌های متنی (لینک‌ها + چت معمولی)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
     app.add_error_handler(error)
 
     print("polling")
     app.run_polling()
-
-
-
