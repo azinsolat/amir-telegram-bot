@@ -593,7 +593,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ================== Callback انتخاب کیفیت یوتیوب ==================
-
 async def handle_youtube_quality_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -616,6 +615,7 @@ async def handle_youtube_quality_callback(update: Update, context: ContextTypes.
     direct_url = opt.get("direct_url") or yt_url
     is_audio = opt.get("is_audio")
 
+    # ⛔ چک اول: اگر از روی اطلاعات yt_dlp معلومه که خیلی بزرگه
     if filesize and filesize > MAX_TG_FILE_SIZE:
         size_mb = filesize / (1024 * 1024)
         text = (
@@ -625,6 +625,7 @@ async def handle_youtube_quality_callback(update: Update, context: ContextTypes.
         await query.edit_message_text(text)
         return
 
+    # اگر اینجا رسیدیم یعنی یا حجم کمتر از محدوده‌ست، یا حجم دقیق رو نمی‌دونیم
     await query.edit_message_text("دارم فایل رو دانلود می‌کنم... ⏳")
 
     loop = asyncio.get_running_loop()
@@ -633,6 +634,26 @@ async def handle_youtube_quality_callback(update: Update, context: ContextTypes.
             None, download_specific_format, yt_url, format_id, is_audio
         )
 
+        # ✅ چک دوم: بعد از دانلود، حجم واقعی فایل رو هم چک کن
+        try:
+            real_size = os.path.getsize(file_path)
+        except OSError:
+            real_size = None
+
+        if real_size and real_size > MAX_TG_FILE_SIZE:
+            # فایل رو پاک کن، چون به درد ارسال نمی‌خوره
+            folder = os.path.dirname(file_path)
+            shutil.rmtree(folder, ignore_errors=True)
+
+            size_mb = real_size / (1024 * 1024)
+            text = (
+                f"حجم نهایی این فایل حدود {size_mb:.1f} مگابایته و از محدودیت تلگرام بیشتره 😕\n\n"
+                f"این لینک مستقیمشه، از اینجا می‌تونی دانلود کنی:\n{direct_url}"
+            )
+            await query.message.reply_text(text)
+            return
+
+        # اگر مشکلی نداشت، فایل رو بفرست
         caption = (caption or "اینم فایل دانلود شده ✅") + f"\n\n{BOT_USERNAME}"
 
         try:
@@ -646,6 +667,9 @@ async def handle_youtube_quality_callback(update: Update, context: ContextTypes.
         print("download_specific_format error:", e)
         await query.message.reply_text("در دانلود فایل مشکلی پیش اومد 😕")
 
+
+    
+       
 
 # ================== لاگ ارورها ==================
 
@@ -680,3 +704,4 @@ if __name__ == "__main__":
 
     print("polling")
     app.run_polling()
+
