@@ -1,14 +1,11 @@
 from telegram import (
     Update,
     ReplyKeyboardMarkup,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
 )
 from telegram.ext import (
     Application,
     CommandHandler,
     MessageHandler,
-    CallbackQueryHandler,
     filters,
     ContextTypes,
 )
@@ -31,8 +28,7 @@ BOT_USERNAME = os.environ.get("BOT_USERNAME", "@amirbeautybot")
 APIFY_TOKEN = os.getenv("APIFY_TOKEN")
 APIFY_ACTOR_ID = os.getenv("APIFY_ACTOR_ID")
 
-MAX_TG_FILE_SIZE = 48 * 1024 * 1024  # حدوداً ۴۸ مگ، کمی کمتر از محدودیت تلگرام
-
+MAX_TG_FILE_SIZE = 48 * 1024 * 1024  # فعلاً استفاده نمی‌شود، برای آینده نگهش می‌داریم
 
 # ================== دکمه‌های اصلی ==================
 
@@ -285,125 +281,49 @@ def download_media(url: str) -> tuple[str, str | None]:
     return file_path, caption
 
 
-# ================== یوتیوب: گرفتن کیفیت‌ها و دانلود ==================
+# ================== یوتیوب: روش Instant Upload رایگان ==================
 
-def get_youtube_quality_options(url: str):
+def get_direct_youtube_url(url: str):
     """
-    کیفیت‌های مختلف را از یوتیوب می‌گیرد (چند تا mp3 و چند ارتفاع mp4).
-    خروجی: title, options
-    هر option: dict(id, label, filesize, is_audio, direct_url)
+    فقط لینک مستقیم ویدیو رو برمی‌گردونه – بدون دانلود.
     """
-
     ydl_opts = {
-        "format": "bestaudio/best",
         "quiet": True,
-        "noplaylist": True,
+        "skip_download": True,
+        "format": "best[ext=mp4]/best",
     }
-
     with YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=False)
-
-    title = info.get("title") or "video"
-    formats = info.get("formats") or []
-
-    options = []
-
-    # --- فرمت‌های صوتی ---
-    audio_formats = [
-        f for f in formats
-        if f.get("vcodec") == "none" and f.get("acodec") != "none"
-    ]
-
-    def pick_closest(target_kbps):
-        best = None
-        best_diff = None
-        for f in audio_formats:
-            abr = f.get("abr")
-            if abr is None:
-                continue
-            diff = abs(abr - target_kbps)
-            if best is None or diff < best_diff:
-                best = f
-                best_diff = diff
-        return best
-
-    a190 = pick_closest(190)
-    a320 = pick_closest(320)
-
-    for fmt, label_prefix in [(a190, "🎵 190k | mp3"), (a320, "🎵 320k | mp3")]:
-        if fmt:
-            size = fmt.get("filesize") or fmt.get("filesize_approx")
-            size_mb = size / (1024 * 1024) if size else None
-            label = label_prefix
-            if size_mb:
-                label += f", {size_mb:.1f} MB"
-
-            options.append({
-                "id": fmt["format_id"],
-                "label": label,
-                "filesize": size,
-                "is_audio": True,
-                "direct_url": fmt.get("url"),
-            })
-
-    # --- فرمت‌های ویدیویی mp4 با ارتفاع‌های مختلف ---
-    target_heights = [144, 240, 360, 480, 720, 1080]
-
-    for h in target_heights:
-        best = None
-        best_diff = None
-        for f in formats:
-            if f.get("vcodec") == "none":
-                continue
-            if f.get("ext") != "mp4":
-                continue
-            height = f.get("height")
-            if not height:
-                continue
-            diff = abs(height - h)
-            if best is None or diff < best_diff:
-                best = f
-                best_diff = diff
-
-        if best:
-            size = best.get("filesize") or best.get("filesize_approx")
-            size_mb = size / (1024 * 1024) if size else None
-
-            label = f"🎬 {h}p | mp4"
-            if size_mb:
-                label += f", {size_mb:.1f} MB"
-
-            options.append({
-                "id": best["format_id"],
-                "label": label,
-                "filesize": size,
-                "is_audio": False,
-                "direct_url": best.get("url"),
-            })
-
-    return title, options
+        return info.get("url"), info.get("title")
 
 
-def download_specific_format(url: str, format_id: str, is_audio: bool) -> tuple[str, str]:
+async def instant_youtube_handler(message, url: str):
     """
-    یک format_id مشخص را دانلود می‌کند (همان کیفیت انتخاب‌شده).
-    اگر is_audio=True باشد، فقط صدا است؛ ولی ما همان فرمت اصلی را نگه می‌داریم.
+    لینک یوتیوب رو می‌گیرد و به روش رایگان Instant Upload
+    مستقیم به تلگرام می‌سپارد تا خودش دانلود کند.
     """
-    temp_dir = tempfile.mkdtemp(prefix="amirbot_dl_")
+    await message.reply_text("⏳ دارم لینک مستقیم ویدیو رو در میارم (بدون دانلود روی سرور)...")
 
-    ydl_opts = {
-        "outtmpl": f"{temp_dir}/%(title)s.%(ext)s",
-        "format": format_id,
-        "noplaylist": True,
-        "quiet": True,
-    }
+    try:
+        direct_url, title = await asyncio.to_thread(get_direct_youtube_url, url)
 
-    with YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=True)
-        file_path = ydl.prepare_filename(info)
+        if not direct_url:
+            await message.reply_text("❌ نتونستم لینک مستقیم ویدیو رو پیدا کنم.")
+            return
 
-    caption = info.get("description") or ""
-    return file_path, caption
+        await message.reply_text("🚀 در حال ارسال ویدیو (تلگرام خودش دانلود می‌کنه)...")
+
+        await message.reply_video(
+            video=direct_url,
+            caption=title or "ویدیو آماده شد 🎬"
+        )
+
+    except Exception as e:
+        print("instant_youtube_handler error:", e)
+        await message.reply_text(
+            "❌ نشد این لینک رو مستقیم به تلگرام بدم.\n"
+            "ممکنه یوتیوب یا فرمت ویدیو محدودیت داشته باشه."
+        )
 
 
 # ================== هندل پیام‌ها ==================
@@ -483,44 +403,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             return
 
-        # ۲) لینک یوتیوب → نمایش گزینه‌های کیفیت
+        # ۲) لینک یوتیوب → روش Instant Upload رایگان
         if "youtube.com" in url or "youtu.be" in url:
-            await message.reply_text("دارم کیفیت‌های موجود رو می‌گیرم... ⏳")
-            loop = asyncio.get_running_loop()
-            try:
-                title, options = await loop.run_in_executor(
-                    None, get_youtube_quality_options, url
-                )
-                if not options:
-                    await message.reply_text("کیفیت مناسبی پیدا نکردم 😕")
-                    return
-
-                # ذخیره برای callback
-                context.user_data["yt_url"] = url
-                context.user_data["yt_options"] = {opt["id"]: opt for opt in options}
-
-                buttons = []
-                row = []
-                for opt in options:
-                    row.append(InlineKeyboardButton(
-                        opt["label"],
-                        callback_data=f"yt|{opt['id']}"
-                    ))
-                    if len(row) == 2:
-                        buttons.append(row)
-                        row = []
-                if row:
-                    buttons.append(row)
-
-                reply_markup = InlineKeyboardMarkup(buttons)
-
-                await message.reply_text(
-                    f"🎥 {title}\n\nیکی از کیفیت‌ها رو انتخاب کن:",
-                    reply_markup=reply_markup
-                )
-            except Exception as e:
-                print("get_youtube_quality_options error:", e)
-                await message.reply_text("نتونستم کیفیت‌ها رو بگیرم 😕")
+            await instant_youtube_handler(message, url)
             return
 
         # ۳) سایر لینک‌های ویدیو (IG پست، TikTok، X، …) → دانلود ساده
@@ -592,85 +477,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await message.reply_text(response)
 
 
-# ================== Callback انتخاب کیفیت یوتیوب ==================
-async def handle_youtube_quality_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    data = query.data or ""
-    if not data.startswith("yt|"):
-        return
-
-    format_id = data.split("|", 1)[1]
-
-    yt_url = context.user_data.get("yt_url")
-    options_dict = context.user_data.get("yt_options") or {}
-    opt = options_dict.get(format_id)
-
-    if not yt_url or not opt:
-        await query.edit_message_text("این انتخاب قدیمی شده، دوباره لینک رو بفرست 🙂")
-        return
-
-    filesize = opt.get("filesize")
-    direct_url = opt.get("direct_url") or yt_url
-    is_audio = opt.get("is_audio")
-
-    # ⛔ چک اول: اگر از روی اطلاعات yt_dlp معلومه که خیلی بزرگه
-    if filesize and filesize > MAX_TG_FILE_SIZE:
-        size_mb = filesize / (1024 * 1024)
-        text = (
-            f"حجم این فایل حدود {size_mb:.1f} مگابایته و تلگرام اجازه نمی‌ده ربات‌ها همچین فایلی رو مستقیم بفرستن 😅\n\n"
-            f"از این لینک می‌تونی مستقیم دانلودش کنی:\n{direct_url}"
-        )
-        await query.edit_message_text(text)
-        return
-
-    # اگر اینجا رسیدیم یعنی یا حجم کمتر از محدوده‌ست، یا حجم دقیق رو نمی‌دونیم
-    await query.edit_message_text("دارم فایل رو دانلود می‌کنم... ⏳")
-
-    loop = asyncio.get_running_loop()
-    try:
-        file_path, caption = await loop.run_in_executor(
-            None, download_specific_format, yt_url, format_id, is_audio
-        )
-
-        # ✅ چک دوم: بعد از دانلود، حجم واقعی فایل رو هم چک کن
-        try:
-            real_size = os.path.getsize(file_path)
-        except OSError:
-            real_size = None
-
-        if real_size and real_size > MAX_TG_FILE_SIZE:
-            # فایل رو پاک کن، چون به درد ارسال نمی‌خوره
-            folder = os.path.dirname(file_path)
-            shutil.rmtree(folder, ignore_errors=True)
-
-            size_mb = real_size / (1024 * 1024)
-            text = (
-                f"حجم نهایی این فایل حدود {size_mb:.1f} مگابایته و از محدودیت تلگرام بیشتره 😕\n\n"
-                f"این لینک مستقیمشه، از اینجا می‌تونی دانلود کنی:\n{direct_url}"
-            )
-            await query.message.reply_text(text)
-            return
-
-        # اگر مشکلی نداشت، فایل رو بفرست
-        caption = (caption or "اینم فایل دانلود شده ✅") + f"\n\n{BOT_USERNAME}"
-
-        try:
-            with open(file_path, "rb") as f:
-                await query.message.reply_document(f, caption=caption)
-        finally:
-            folder = os.path.dirname(file_path)
-            shutil.rmtree(folder, ignore_errors=True)
-
-    except Exception as e:
-        print("download_specific_format error:", e)
-        await query.message.reply_text("در دانلود فایل مشکلی پیش اومد 😕")
-
-
-    
-       
-
 # ================== لاگ ارورها ==================
 
 async def error(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -694,9 +500,6 @@ if __name__ == "__main__":
         handle_buttons
     ))
 
-    # Callback انتخاب کیفیت یوتیوب
-    app.add_handler(CallbackQueryHandler(handle_youtube_quality_callback))
-
     # پیام‌های متنی (لینک‌ها + چت معمولی)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
@@ -704,4 +507,3 @@ if __name__ == "__main__":
 
     print("polling")
     app.run_polling()
-
